@@ -10,16 +10,19 @@
     "codegen": "graphql-codegen"
   },
   "dependencies": {
-    "@apollo/client": "^4.0.11",
-    "@apollo/client-integration-nextjs": "^0.14.3",
+    "@apollo/client": "^3.14.0",
+    "@nhost/nextjs": "2.3.1",
+    "@nhost/nhost-js": "^3.3.1",
+    "@nhost/react": "^3.11.2",
+    "@nhost/react-apollo": "18.0.2",
     "@radix-ui/react-slot": "^1.2.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "graphql": "^16.12.0",
     "lucide-react": "^0.561.0",
-    "next": "16.0.10",
-    "react": "19.2.1",
-    "react-dom": "19.2.1",
+    "next": "15.5.9",
+    "react": "18",
+    "react-dom": "18",
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
