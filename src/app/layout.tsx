@@ -1,4 +1,11 @@
+import type { Metadata } from 'next'
 import Providers from './providers'
+import './globals.css'
+
+export const metadata: Metadata = {
+  title: 'Kanban Board',
+  description: 'MyCritters Kanban onboarding',
+}
 
 export default function RootLayout({
   children,
