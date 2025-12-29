@@ -18,22 +18,18 @@ import { DELETE_CARD } from '@/graphql/mutations/deleteCard'
 import { UPDATE_COLUMN_POSITION } from '@/graphql/mutations/updateColumn'
 import { COLUMNS_WITH_CARDS_SUBSCRIPTION } from '@/graphql/subscriptions/columnsWithCards'
 
-/* =========================
-   Types (NO `any`)
-========================= */
-type Card = {
-  id: string
-  title: string
-}
-
 type Column = {
   id: string
   name: string
+  position: number
   cards: Card[]
 }
 
-type SubscriptionData = {
-  columns: Column[]
+type Card = {
+  id: string
+  title: string
+  position: number
+  column_id: string
 }
 
 export default function BoardPage() {
@@ -43,7 +39,10 @@ export default function BoardPage() {
   const [newCardTitle, setNewCardTitle] = useState('')
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
 
-  const { data, loading } = useSubscription<SubscriptionData>(
+  /* =========================
+     Realtime subscription
+  ========================= */
+  const { data, loading } = useSubscription(
     COLUMNS_WITH_CARDS_SUBSCRIPTION,
     {
       variables: { boardId },
@@ -61,12 +60,13 @@ export default function BoardPage() {
   if (loading || !data) return <p>Loading…</p>
 
   /* =========================
-     Drag handler
+     Drag handler (FIXED)
   ========================= */
   const onDragEnd = async (result: DropResult) => {
     const { destination, source, draggableId, type } = result
     if (!destination) return
 
+    // No-op
     if (
       destination.droppableId === source.droppableId &&
       destination.index === source.index
@@ -74,25 +74,30 @@ export default function BoardPage() {
       return
     }
 
+    // COLUMN drag
     if (type === 'COLUMN') {
       await updateColumn({
         variables: {
           id: draggableId,
-          position: Date.now(),
+          position: destination.index,
         },
       })
       return
     }
 
+    // CARD drag
     await updateCard({
       variables: {
         id: draggableId,
         column_id: destination.droppableId,
-        position: Date.now(),
+        position: destination.index,
       },
     })
   }
 
+  /* =========================
+     Add card
+  ========================= */
   const handleAddCard = async (columnId: string) => {
     if (!newCardTitle.trim()) return
 
@@ -100,7 +105,8 @@ export default function BoardPage() {
       variables: {
         column_id: columnId,
         title: newCardTitle,
-        position: Date.now(),
+        position: data.columns.find((c: Column) => c.id === columnId)
+          ?.cards.length ?? 0,
       },
     })
 
@@ -110,9 +116,10 @@ export default function BoardPage() {
 
   return (
     <main className="p-6 space-y-6">
-      <h1 className="text-3xl font-bold">Board</h1>
+      <h1 className="text-3xl font-bold">Kanban Board</h1>
 
       <DragDropContext onDragEnd={onDragEnd}>
+        {/* COLUMNS */}
         <Droppable
           droppableId="columns"
           direction="horizontal"
@@ -124,7 +131,7 @@ export default function BoardPage() {
               {...provided.droppableProps}
               className="flex gap-6 overflow-x-auto"
             >
-              {data.columns.map((column, colIndex) => (
+              {data.columns.map((column: Column, colIndex: number) => (
                 <Draggable
                   draggableId={column.id}
                   index={colIndex}
@@ -144,6 +151,7 @@ export default function BoardPage() {
                           {column.name}
                         </h2>
 
+                        {/* CARDS */}
                         <Droppable droppableId={column.id} type="CARD">
                           {(provided) => (
                             <div
@@ -151,50 +159,52 @@ export default function BoardPage() {
                               {...provided.droppableProps}
                               className="space-y-2"
                             >
-                              {column.cards.map((card, index) => (
-                                <Draggable
-                                  draggableId={card.id}
-                                  index={index}
-                                  key={card.id}
-                                >
-                                  {(provided) => (
-                                    <div
-                                      ref={provided.innerRef}
-                                      {...provided.draggableProps}
-                                      {...provided.dragHandleProps}
-                                      className="rounded bg-white p-2 shadow-sm space-y-1"
-                                    >
-                                      <input
-                                        className="w-full border rounded px-1 py-0.5"
-                                        defaultValue={card.title}
-                                        onBlur={(e) => {
-                                          if (
-                                            e.target.value !== card.title
-                                          ) {
-                                            updateCardDetails({
-                                              variables: {
-                                                id: card.id,
-                                                title: e.target.value,
-                                              },
+                              {column.cards.map(
+                                (card: Card, index: number) => (
+                                  <Draggable
+                                    draggableId={card.id}
+                                    index={index}
+                                    key={card.id}
+                                  >
+                                    {(provided) => (
+                                      <div
+                                        ref={provided.innerRef}
+                                        {...provided.draggableProps}
+                                        {...provided.dragHandleProps}
+                                        className="rounded bg-white p-2 shadow-sm space-y-1"
+                                      >
+                                        <input
+                                          className="w-full border rounded px-1 py-0.5"
+                                          defaultValue={card.title}
+                                          onBlur={(e) => {
+                                            if (
+                                              e.target.value !== card.title
+                                            ) {
+                                              updateCardDetails({
+                                                variables: {
+                                                  id: card.id,
+                                                  title: e.target.value,
+                                                },
+                                              })
+                                            }
+                                          }}
+                                        />
+
+                                        <button
+                                          className="text-xs text-red-500"
+                                          onClick={() =>
+                                            deleteCard({
+                                              variables: { id: card.id },
                                             })
                                           }
-                                        }}
-                                      />
-
-                                      <button
-                                        className="text-xs text-red-500"
-                                        onClick={() =>
-                                          deleteCard({
-                                            variables: { id: card.id },
-                                          })
-                                        }
-                                      >
-                                        Delete
-                                      </button>
-                                    </div>
-                                  )}
-                                </Draggable>
-                              ))}
+                                        >
+                                          Delete
+                                        </button>
+                                      </div>
+                                    )}
+                                  </Draggable>
+                                )
+                              )}
 
                               {provided.placeholder}
                             </div>
