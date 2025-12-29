@@ -18,6 +18,24 @@ import { DELETE_CARD } from '@/graphql/mutations/deleteCard'
 import { UPDATE_COLUMN_POSITION } from '@/graphql/mutations/updateColumn'
 import { COLUMNS_WITH_CARDS_SUBSCRIPTION } from '@/graphql/subscriptions/columnsWithCards'
 
+/* =========================
+   Types (NO `any`)
+========================= */
+type Card = {
+  id: string
+  title: string
+}
+
+type Column = {
+  id: string
+  name: string
+  cards: Card[]
+}
+
+type SubscriptionData = {
+  columns: Column[]
+}
+
 export default function BoardPage() {
   const { isAuthenticated } = useAuthenticationStatus()
   const { boardId } = useParams<{ boardId: string }>()
@@ -25,10 +43,7 @@ export default function BoardPage() {
   const [newCardTitle, setNewCardTitle] = useState('')
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
 
-  /* =========================
-     Realtime data
-  ========================= */
-  const { data, loading } = useSubscription(
+  const { data, loading } = useSubscription<SubscriptionData>(
     COLUMNS_WITH_CARDS_SUBSCRIPTION,
     {
       variables: { boardId },
@@ -59,30 +74,25 @@ export default function BoardPage() {
       return
     }
 
-    // COLUMN DRAG
     if (type === 'COLUMN') {
       await updateColumn({
         variables: {
           id: draggableId,
-          position: destination.index, // ✅ FIXED
+          position: Date.now(),
         },
       })
       return
     }
 
-    // CARD DRAG
     await updateCard({
       variables: {
         id: draggableId,
         column_id: destination.droppableId,
-        position: destination.index, // ✅ FIXED
+        position: Date.now(),
       },
     })
   }
 
-  /* =========================
-     Add card
-  ========================= */
   const handleAddCard = async (columnId: string) => {
     if (!newCardTitle.trim()) return
 
@@ -90,7 +100,7 @@ export default function BoardPage() {
       variables: {
         column_id: columnId,
         title: newCardTitle,
-        position: 0,
+        position: Date.now(),
       },
     })
 
@@ -103,7 +113,6 @@ export default function BoardPage() {
       <h1 className="text-3xl font-bold">Board</h1>
 
       <DragDropContext onDragEnd={onDragEnd}>
-        {/* COLUMNS */}
         <Droppable
           droppableId="columns"
           direction="horizontal"
@@ -115,7 +124,7 @@ export default function BoardPage() {
               {...provided.droppableProps}
               className="flex gap-6 overflow-x-auto"
             >
-              {data.columns.map((column: any, colIndex: number) => (
+              {data.columns.map((column, colIndex) => (
                 <Draggable
                   draggableId={column.id}
                   index={colIndex}
@@ -135,7 +144,6 @@ export default function BoardPage() {
                           {column.name}
                         </h2>
 
-                        {/* CARDS */}
                         <Droppable droppableId={column.id} type="CARD">
                           {(provided) => (
                             <div
@@ -143,59 +151,56 @@ export default function BoardPage() {
                               {...provided.droppableProps}
                               className="space-y-2"
                             >
-                              {column.cards.map(
-                                (card: any, index: number) => (
-                                  <Draggable
-                                    draggableId={card.id}
-                                    index={index}
-                                    key={card.id}
-                                  >
-                                    {(provided) => (
-                                      <div
-                                        ref={provided.innerRef}
-                                        {...provided.draggableProps}
-                                        {...provided.dragHandleProps}
-                                        className="rounded bg-white p-2 shadow-sm space-y-1"
-                                      >
-                                        <input
-                                          className="w-full border rounded px-1 py-0.5"
-                                          defaultValue={card.title}
-                                          onBlur={(e) => {
-                                            if (
-                                              e.target.value !== card.title
-                                            ) {
-                                              updateCardDetails({
-                                                variables: {
-                                                  id: card.id,
-                                                  title: e.target.value,
-                                                },
-                                              })
-                                            }
-                                          }}
-                                        />
-
-                                        <button
-                                          className="text-xs text-red-500"
-                                          onClick={() =>
-                                            deleteCard({
-                                              variables: { id: card.id },
+                              {column.cards.map((card, index) => (
+                                <Draggable
+                                  draggableId={card.id}
+                                  index={index}
+                                  key={card.id}
+                                >
+                                  {(provided) => (
+                                    <div
+                                      ref={provided.innerRef}
+                                      {...provided.draggableProps}
+                                      {...provided.dragHandleProps}
+                                      className="rounded bg-white p-2 shadow-sm space-y-1"
+                                    >
+                                      <input
+                                        className="w-full border rounded px-1 py-0.5"
+                                        defaultValue={card.title}
+                                        onBlur={(e) => {
+                                          if (
+                                            e.target.value !== card.title
+                                          ) {
+                                            updateCardDetails({
+                                              variables: {
+                                                id: card.id,
+                                                title: e.target.value,
+                                              },
                                             })
                                           }
-                                        >
-                                          Delete
-                                        </button>
-                                      </div>
-                                    )}
-                                  </Draggable>
-                                )
-                              )}
+                                        }}
+                                      />
+
+                                      <button
+                                        className="text-xs text-red-500"
+                                        onClick={() =>
+                                          deleteCard({
+                                            variables: { id: card.id },
+                                          })
+                                        }
+                                      >
+                                        Delete
+                                      </button>
+                                    </div>
+                                  )}
+                                </Draggable>
+                              ))}
 
                               {provided.placeholder}
                             </div>
                           )}
                         </Droppable>
 
-                        {/* ADD CARD */}
                         {activeColumnId === column.id ? (
                           <input
                             className="w-full rounded border px-2 py-1"

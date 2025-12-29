@@ -23,11 +23,14 @@ export default function CountriesPage() {
     <div className="p-6">
       <h1 className="text-2xl font-bold mb-4">Countries</h1>
       <ul className="space-y-1">
-        {data?.countries.map((country) => (
-          <li key={country.code}>
-            {country.emoji} {country.name}
-          </li>
-        ))}
+        {data?.countries.map(
+          (country: { code: string; name: string; emoji: string }) => (
+            <li key={country.code}>
+              {country.emoji} {country.name}
+            </li>
+          )
+        )}
+
       </ul>
     </div>
   )
