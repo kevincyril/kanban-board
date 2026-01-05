@@ -1,72 +1,140 @@
 'use client'
 
-import { useState } from 'react'
+import { gql, useQuery, useMutation } from '@apollo/client'
 import { useParams } from 'next/navigation'
+import { useState } from 'react'
+import { useAuthenticationStatus } from '@nhost/react'
 import {
   DragDropContext,
   Droppable,
   Draggable,
   DropResult,
 } from '@hello-pangea/dnd'
-import { useAuthenticationStatus } from '@nhost/react'
-import { useMutation, useSubscription } from '@apollo/client'
 
-import { CREATE_CARD } from '@/graphql/mutations/createCard'
-import { UPDATE_CARD_POSITION_AND_COLUMN } from '@/graphql/mutations/updateCard'
-import { UPDATE_CARD_DETAILS } from '@/graphql/mutations/updateCardDetails'
-import { DELETE_CARD } from '@/graphql/mutations/deleteCard'
-import { UPDATE_COLUMN_POSITION } from '@/graphql/mutations/updateColumn'
-import { COLUMNS_WITH_CARDS_SUBSCRIPTION } from '@/graphql/subscriptions/columnsWithCards'
+/* =========================
+   GraphQL
+========================= */
 
-type Column = {
-  id: string
-  name: string
-  position: number
-  cards: Card[]
-}
+const BOARD_QUERY = gql`
+  query Board($id: uuid!) {
+    boards_by_pk(id: $id) {
+      id
+      name
+      columns(order_by: { position: asc }) {
+        id
+        name
+        position
+        cards(order_by: { position: asc }) {
+          id
+          title
+          position
+          column_id
+        }
+      }
+    }
+  }
+`
 
-type Card = {
-  id: string
-  title: string
-  position: number
-  column_id: string
-}
+const CREATE_COLUMN = gql`
+  mutation CreateColumn($boardId: uuid!, $name: String!) {
+    insert_columns_one(
+      object: { board_id: $boardId, name: $name, position: 0 }
+    ) {
+      id
+    }
+  }
+`
+
+const CREATE_CARD = gql`
+  mutation CreateCard(
+    $columnId: uuid!
+    $title: String!
+    $position: numeric!
+  ) {
+    insert_cards_one(
+      object: {
+        column_id: $columnId
+        title: $title
+        position: $position
+      }
+    ) {
+      id
+    }
+  }
+`
+
+const UPDATE_CARD_POSITION = gql`
+  mutation UpdateCardPosition(
+    $id: uuid!
+    $column_id: uuid!
+    $position: numeric!
+  ) {
+    update_cards_by_pk(
+      pk_columns: { id: $id }
+      _set: { column_id: $column_id, position: $position }
+    ) {
+      id
+    }
+  }
+`
+
+const UPDATE_CARD_TITLE = gql`
+  mutation UpdateCardTitle($id: uuid!, $title: String!) {
+    update_cards_by_pk(
+      pk_columns: { id: $id }
+      _set: { title: $title }
+    ) {
+      id
+    }
+  }
+`
+
+const DELETE_CARD = gql`
+  mutation DeleteCard($id: uuid!) {
+    delete_cards_by_pk(id: $id) {
+      id
+    }
+  }
+`
+
+/* =========================
+   Page
+========================= */
 
 export default function BoardPage() {
   const { isAuthenticated } = useAuthenticationStatus()
-  const { boardId } = useParams<{ boardId: string }>()
+  const params = useParams()
+  const boardId = params.boardId as string
 
-  const [newCardTitle, setNewCardTitle] = useState('')
-  const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
+  const [newColumnName, setNewColumnName] = useState('')
+  const [newCardTitle, setNewCardTitle] = useState<Record<string, string>>({})
+
+  const { data, loading, error } = useQuery(BOARD_QUERY, {
+    variables: { id: boardId },
+    skip: !isAuthenticated,
+  })
+
+  const [createColumn] = useMutation(CREATE_COLUMN, {
+    refetchQueries: ['Board'],
+  })
+
+  const [createCard] = useMutation(CREATE_CARD, {
+    refetchQueries: ['Board'],
+  })
+
+  const [updateCardPosition] = useMutation(UPDATE_CARD_POSITION)
+  const [updateCardTitle] = useMutation(UPDATE_CARD_TITLE)
+  const [deleteCard] = useMutation(DELETE_CARD, {
+    refetchQueries: ['Board'],
+  })
 
   /* =========================
-     Realtime subscription
-  ========================= */
-  const { data, loading } = useSubscription(
-    COLUMNS_WITH_CARDS_SUBSCRIPTION,
-    {
-      variables: { boardId },
-      skip: !isAuthenticated,
-    }
-  )
-
-  const [createCard] = useMutation(CREATE_CARD)
-  const [updateCard] = useMutation(UPDATE_CARD_POSITION_AND_COLUMN)
-  const [updateColumn] = useMutation(UPDATE_COLUMN_POSITION)
-  const [updateCardDetails] = useMutation(UPDATE_CARD_DETAILS)
-  const [deleteCard] = useMutation(DELETE_CARD)
-
-  if (!isAuthenticated) return <p>Please sign in</p>
-  if (loading || !data) return <p>Loading…</p>
-
-  /* =========================
-     Drag handler (FIXED)
+     Drag handler
   ========================= */
   const onDragEnd = async (result: DropResult) => {
-    const { destination, source, draggableId, type } = result
+    const { destination, source, draggableId } = result
     if (!destination) return
 
-    // No-op
     if (
       destination.droppableId === source.droppableId &&
       destination.index === source.index
@@ -74,19 +142,7 @@ export default function BoardPage() {
       return
     }
 
-    // COLUMN drag
-    if (type === 'COLUMN') {
-      await updateColumn({
-        variables: {
-          id: draggableId,
-          position: destination.index,
-        },
-      })
-      return
-    }
-
-    // CARD drag
-    await updateCard({
+    await updateCardPosition({
       variables: {
         id: draggableId,
         column_id: destination.droppableId,
@@ -95,156 +151,142 @@ export default function BoardPage() {
     })
   }
 
-  /* =========================
-     Add card
-  ========================= */
-  const handleAddCard = async (columnId: string) => {
-    if (!newCardTitle.trim()) return
+  if (!isAuthenticated) return <p className="p-6">Please sign in</p>
+  if (loading) return <p className="p-6">Loading…</p>
+  if (error) return <p className="p-6">Error: {error.message}</p>
+  if (!data?.boards_by_pk) return <p className="p-6">Board not found</p>
 
-    await createCard({
-      variables: {
-        column_id: columnId,
-        title: newCardTitle,
-        position: data.columns.find((c: Column) => c.id === columnId)
-          ?.cards.length ?? 0,
-      },
-    })
-
-    setNewCardTitle('')
-    setActiveColumnId(null)
-  }
+  const board = data.boards_by_pk
 
   return (
     <main className="p-6 space-y-6">
-      <h1 className="text-3xl font-bold">Kanban Board</h1>
+      <h1 className="text-3xl font-bold">{board.name}</h1>
 
+      {/* Create Column */}
+      <form
+        onSubmit={async (e) => {
+          e.preventDefault()
+          if (!newColumnName.trim()) return
+          await createColumn({
+            variables: { boardId, name: newColumnName },
+          })
+          setNewColumnName('')
+        }}
+        className="flex gap-2"
+      >
+        <input
+          className="rounded border px-2 py-1"
+          placeholder="New column name"
+          value={newColumnName}
+          onChange={(e) => setNewColumnName(e.target.value)}
+        />
+        <button className="rounded bg-black px-3 py-1 text-white">
+          Add Column
+        </button>
+      </form>
+
+      {/* Columns & Cards */}
       <DragDropContext onDragEnd={onDragEnd}>
-        {/* COLUMNS */}
-        <Droppable
-          droppableId="columns"
-          direction="horizontal"
-          type="COLUMN"
-        >
-          {(provided) => (
-            <div
-              ref={provided.innerRef}
-              {...provided.droppableProps}
-              className="flex gap-6 overflow-x-auto"
-            >
-              {data.columns.map((column: Column, colIndex: number) => (
-                <Draggable
-                  draggableId={column.id}
-                  index={colIndex}
-                  key={column.id}
+        <div className="flex gap-4 overflow-x-auto">
+          {board.columns.map((column: any) => (
+            <Droppable droppableId={column.id} key={column.id}>
+              {(provided) => (
+                <div
+                  ref={provided.innerRef}
+                  {...provided.droppableProps}
+                  className="w-64 shrink-0 rounded border bg-gray-50 p-3 space-y-3"
                 >
-                  {(provided) => (
-                    <div
-                      ref={provided.innerRef}
-                      {...provided.draggableProps}
-                      className="w-72 shrink-0"
-                    >
-                      <div
-                        {...provided.dragHandleProps}
-                        className="rounded-lg bg-gray-100 p-4 space-y-3"
+                  <h2 className="font-semibold">{column.name}</h2>
+
+                  {/* Cards */}
+                  <div className="space-y-2">
+                    {column.cards.map((card: any, index: number) => (
+                      <Draggable
+                        draggableId={card.id}
+                        index={index}
+                        key={card.id}
                       >
-                        <h2 className="font-semibold text-lg">
-                          {column.name}
-                        </h2>
-
-                        {/* CARDS */}
-                        <Droppable droppableId={column.id} type="CARD">
-                          {(provided) => (
-                            <div
-                              ref={provided.innerRef}
-                              {...provided.droppableProps}
-                              className="space-y-2"
-                            >
-                              {column.cards.map(
-                                (card: Card, index: number) => (
-                                  <Draggable
-                                    draggableId={card.id}
-                                    index={index}
-                                    key={card.id}
-                                  >
-                                    {(provided) => (
-                                      <div
-                                        ref={provided.innerRef}
-                                        {...provided.draggableProps}
-                                        {...provided.dragHandleProps}
-                                        className="rounded bg-white p-2 shadow-sm space-y-1"
-                                      >
-                                        <input
-                                          className="w-full border rounded px-1 py-0.5"
-                                          defaultValue={card.title}
-                                          onBlur={(e) => {
-                                            if (
-                                              e.target.value !== card.title
-                                            ) {
-                                              updateCardDetails({
-                                                variables: {
-                                                  id: card.id,
-                                                  title: e.target.value,
-                                                },
-                                              })
-                                            }
-                                          }}
-                                        />
-
-                                        <button
-                                          className="text-xs text-red-500"
-                                          onClick={() =>
-                                            deleteCard({
-                                              variables: { id: card.id },
-                                            })
-                                          }
-                                        >
-                                          Delete
-                                        </button>
-                                      </div>
-                                    )}
-                                  </Draggable>
-                                )
-                              )}
-
-                              {provided.placeholder}
-                            </div>
-                          )}
-                        </Droppable>
-
-                        {activeColumnId === column.id ? (
-                          <input
-                            className="w-full rounded border px-2 py-1"
-                            placeholder="Card title"
-                            value={newCardTitle}
-                            onChange={(e) =>
-                              setNewCardTitle(e.target.value)
-                            }
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                handleAddCard(column.id)
-                              }
-                            }}
-                          />
-                        ) : (
-                          <button
-                            className="text-sm text-blue-600"
-                            onClick={() =>
-                              setActiveColumnId(column.id)
-                            }
+                        {(provided) => (
+                          <div
+                            ref={provided.innerRef}
+                            {...provided.draggableProps}
+                            {...provided.dragHandleProps}
+                            className="rounded bg-white p-2 shadow-sm space-y-1"
                           >
-                            + Add card
-                          </button>
+                            <input
+                              className="w-full rounded border px-1 py-0.5 text-sm"
+                              defaultValue={card.title}
+                              onBlur={(e) => {
+                                if (e.target.value !== card.title) {
+                                  updateCardTitle({
+                                    variables: {
+                                      id: card.id,
+                                      title: e.target.value,
+                                    },
+                                  })
+                                }
+                              }}
+                            />
+                            <button
+                              className="text-xs text-red-500"
+                              onClick={() =>
+                                deleteCard({
+                                  variables: { id: card.id },
+                                })
+                              }
+                            >
+                              Delete
+                            </button>
+                          </div>
                         )}
-                      </div>
-                    </div>
-                  )}
-                </Draggable>
-              ))}
+                      </Draggable>
+                    ))}
 
-              {provided.placeholder}
-            </div>
-          )}
-        </Droppable>
+                    {provided.placeholder}
+                  </div>
+
+                  {/* Add Card */}
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault()
+                      const title = newCardTitle[column.id]
+                      if (!title?.trim()) return
+
+                      await createCard({
+                        variables: {
+                          columnId: column.id,
+                          title,
+                          position: column.cards.length,
+                        },
+                      })
+
+                      setNewCardTitle((prev) => ({
+                        ...prev,
+                        [column.id]: '',
+                      }))
+                    }}
+                    className="flex gap-1"
+                  >
+                    <input
+                      className="flex-1 rounded border px-1 py-0.5 text-sm"
+                      placeholder="New card"
+                      value={newCardTitle[column.id] || ''}
+                      onChange={(e) =>
+                        setNewCardTitle((prev) => ({
+                          ...prev,
+                          [column.id]: e.target.value,
+                        }))
+                      }
+                    />
+                    <button className="rounded bg-black px-2 text-white text-sm">
+                      +
+                    </button>
+                  </form>
+                </div>
+              )}
+            </Droppable>
+          ))}
+        </div>
       </DragDropContext>
     </main>
   )
