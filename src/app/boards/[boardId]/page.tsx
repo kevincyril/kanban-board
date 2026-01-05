@@ -1,6 +1,6 @@
 'use client'
 
-import { gql, useQuery, useMutation } from '@apollo/client'
+import { gql, useMutation, useSubscription } from '@apollo/client'
 import { useParams } from 'next/navigation'
 import { useState } from 'react'
 import { useAuthenticationStatus } from '@nhost/react'
@@ -36,11 +36,11 @@ type Board = {
 }
 
 /* =========================
-   GraphQL
+   GraphQL (SUBSCRIPTION)
 ========================= */
 
-const BOARD_QUERY = gql`
-  query Board($id: uuid!) {
+const BOARD_SUBSCRIPTION = gql`
+  subscription Board($id: uuid!) {
     boards_by_pk(id: $id) {
       id
       name
@@ -133,31 +133,19 @@ export default function BoardPage() {
   const [newColumnName, setNewColumnName] = useState('')
   const [newCardTitle, setNewCardTitle] = useState<Record<string, string>>({})
 
-  const { data, loading, error } = useQuery<{ boards_by_pk: Board }>(
-    BOARD_QUERY,
+  const { data, loading, error } = useSubscription<{ boards_by_pk: Board }>(
+    BOARD_SUBSCRIPTION,
     {
       variables: { id: boardId },
       skip: !isAuthenticated,
     }
   )
 
-  const [createColumn] = useMutation(CREATE_COLUMN, {
-    refetchQueries: ['Board'],
-  })
-
-  const [createCard] = useMutation(CREATE_CARD, {
-    refetchQueries: ['Board'],
-  })
-
+  const [createColumn] = useMutation(CREATE_COLUMN)
+  const [createCard] = useMutation(CREATE_CARD)
   const [updateCardPosition] = useMutation(UPDATE_CARD_POSITION)
   const [updateCardTitle] = useMutation(UPDATE_CARD_TITLE)
-  const [deleteCard] = useMutation(DELETE_CARD, {
-    refetchQueries: ['Board'],
-  })
-
-  /* =========================
-     Drag handler
-  ========================= */
+  const [deleteCard] = useMutation(DELETE_CARD)
 
   const onDragEnd = async (result: DropResult) => {
     const { destination, source, draggableId } = result
@@ -195,9 +183,7 @@ export default function BoardPage() {
         onSubmit={async (e) => {
           e.preventDefault()
           if (!newColumnName.trim()) return
-          await createColumn({
-            variables: { boardId, name: newColumnName },
-          })
+          await createColumn({ variables: { boardId, name: newColumnName } })
           setNewColumnName('')
         }}
         className="flex gap-2"
@@ -213,7 +199,6 @@ export default function BoardPage() {
         </button>
       </form>
 
-      {/* Columns & Cards */}
       <DragDropContext onDragEnd={onDragEnd}>
         <div className="flex gap-4 overflow-x-auto">
           {board.columns.map((column) => (
@@ -226,7 +211,6 @@ export default function BoardPage() {
                 >
                   <h2 className="font-semibold">{column.name}</h2>
 
-                  {/* Cards */}
                   <div className="space-y-2">
                     {column.cards.map((card, index) => (
                       <Draggable
@@ -258,9 +242,7 @@ export default function BoardPage() {
                             <button
                               className="text-xs text-red-500"
                               onClick={() =>
-                                deleteCard({
-                                  variables: { id: card.id },
-                                })
+                                deleteCard({ variables: { id: card.id } })
                               }
                             >
                               Delete
@@ -269,11 +251,9 @@ export default function BoardPage() {
                         )}
                       </Draggable>
                     ))}
-
                     {provided.placeholder}
                   </div>
 
-                  {/* Add Card */}
                   <form
                     onSubmit={async (e) => {
                       e.preventDefault()

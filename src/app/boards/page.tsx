@@ -1,14 +1,25 @@
 'use client'
 
-import { gql, useQuery, useMutation } from '@apollo/client'
+import { gql, useMutation, useSubscription } from '@apollo/client'
 import { useAuthenticationStatus } from '@nhost/react'
 import { useState } from 'react'
 import Link from 'next/link'
 
-/* ---------------- Queries & Mutations ---------------- */
+/* =========================
+   Types
+========================= */
 
-const BOARDS = gql`
-  query Boards {
+type Board = {
+  id: string
+  name: string
+}
+
+/* =========================
+   GraphQL
+========================= */
+
+const BOARDS_SUBSCRIPTION = gql`
+  subscription Boards {
     boards(order_by: { created_at: desc }) {
       id
       name
@@ -25,22 +36,22 @@ const CREATE_BOARD = gql`
   }
 `
 
-/* ---------------- Page Component ---------------- */
+/* =========================
+   Page
+========================= */
 
 export default function BoardsPage() {
   const { isAuthenticated } = useAuthenticationStatus()
   const [name, setName] = useState('')
 
-  const { data, loading, error } = useQuery(BOARDS, {
-    skip: !isAuthenticated,
-  })
-
-  const [createBoard, { loading: creating }] = useMutation(
-    CREATE_BOARD,
+  const { data, loading, error } = useSubscription<{ boards: Board[] }>(
+    BOARDS_SUBSCRIPTION,
     {
-      refetchQueries: ['Boards'],
+      skip: !isAuthenticated,
     }
   )
+
+  const [createBoard, { loading: creating }] = useMutation(CREATE_BOARD)
 
   if (!isAuthenticated) return <p>Please sign in</p>
   if (loading) return <p>Loading…</p>
@@ -50,12 +61,10 @@ export default function BoardsPage() {
     <main className="p-6 space-y-6">
       <h1 className="text-2xl font-semibold">Boards</h1>
 
-      {/* Create Board */}
       <form
         onSubmit={async (e) => {
           e.preventDefault()
           if (!name.trim()) return
-
           await createBoard({ variables: { name } })
           setName('')
         }}
@@ -66,21 +75,18 @@ export default function BoardsPage() {
           placeholder="New board name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          autoComplete="off"
         />
 
         <button
-          type="submit"
           disabled={creating}
-          className="rounded bg-black px-3 py-1 text-white disabled:opacity-50"
+          className="rounded bg-black px-3 py-1 text-white"
         >
           {creating ? 'Creating…' : 'Create'}
         </button>
       </form>
 
-      {/* Boards List */}
       <ul className="list-disc pl-6 space-y-1">
-        {data.boards.map((b: { id: string; name: string }) => (
+        {data?.boards.map((b) => (
           <li key={b.id}>
             <Link
               href={`/boards/${b.id}`}
