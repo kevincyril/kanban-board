@@ -12,6 +12,30 @@ import {
 } from '@hello-pangea/dnd'
 
 /* =========================
+   Types
+========================= */
+
+type Card = {
+  id: string
+  title: string
+  position: number
+  column_id: string
+}
+
+type Column = {
+  id: string
+  name: string
+  position: number
+  cards: Card[]
+}
+
+type Board = {
+  id: string
+  name: string
+  columns: Column[]
+}
+
+/* =========================
    GraphQL
 ========================= */
 
@@ -109,10 +133,13 @@ export default function BoardPage() {
   const [newColumnName, setNewColumnName] = useState('')
   const [newCardTitle, setNewCardTitle] = useState<Record<string, string>>({})
 
-  const { data, loading, error } = useQuery(BOARD_QUERY, {
-    variables: { id: boardId },
-    skip: !isAuthenticated,
-  })
+  const { data, loading, error } = useQuery<{ boards_by_pk: Board }>(
+    BOARD_QUERY,
+    {
+      variables: { id: boardId },
+      skip: !isAuthenticated,
+    }
+  )
 
   const [createColumn] = useMutation(CREATE_COLUMN, {
     refetchQueries: ['Board'],
@@ -131,6 +158,7 @@ export default function BoardPage() {
   /* =========================
      Drag handler
   ========================= */
+
   const onDragEnd = async (result: DropResult) => {
     const { destination, source, draggableId } = result
     if (!destination) return
@@ -188,7 +216,7 @@ export default function BoardPage() {
       {/* Columns & Cards */}
       <DragDropContext onDragEnd={onDragEnd}>
         <div className="flex gap-4 overflow-x-auto">
-          {board.columns.map((column: any) => (
+          {board.columns.map((column) => (
             <Droppable droppableId={column.id} key={column.id}>
               {(provided) => (
                 <div
@@ -200,7 +228,7 @@ export default function BoardPage() {
 
                   {/* Cards */}
                   <div className="space-y-2">
-                    {column.cards.map((card: any, index: number) => (
+                    {column.cards.map((card, index) => (
                       <Draggable
                         draggableId={card.id}
                         index={index}
