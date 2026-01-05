@@ -25,29 +25,38 @@ export default function AuthPage() {
       <form
         onSubmit={handleSubmit}
         className="w-80 space-y-4 rounded border p-6"
+        autoComplete="off"
       >
         <h1 className="text-xl font-semibold">Sign in</h1>
 
         <input
           className="w-full rounded border px-2 py-1"
+          type="email"
+          name="email"
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          autoComplete="off"
+          suppressHydrationWarning
         />
 
         <input
           className="w-full rounded border px-2 py-1"
           type="password"
+          name="password"
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          autoComplete="new-password"
+          suppressHydrationWarning
         />
 
         <button
+          type="submit"
           disabled={isLoading}
-          className="w-full rounded bg-black py-2 text-white"
+          className="w-full rounded bg-black py-2 text-white disabled:opacity-50"
         >
-          Sign in
+          {isLoading ? 'Signing in…' : 'Sign in'}
         </button>
 
         {error && (
