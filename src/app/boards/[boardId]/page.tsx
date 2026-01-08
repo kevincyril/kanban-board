@@ -15,11 +15,20 @@ import {
   DropResult,
 } from '@hello-pangea/dnd'
 
+/* shadcn */
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import {
+  Card,
+  CardHeader,
+  CardContent,
+} from '@/components/ui/card'
+
 /* =========================
    Types
 ========================= */
 
-type Card = {
+type CardType = {
   id: string
   title: string
   position: number
@@ -30,7 +39,7 @@ type Column = {
   id: string
   name: string
   position: number
-  cards: Card[]
+  cards: CardType[]
 }
 
 type Board = {
@@ -146,8 +155,8 @@ export default function BoardPage() {
 
   const [newColumnName, setNewColumnName] = useState('')
   const [newCardTitle, setNewCardTitle] = useState<Record<string, string>>({})
-
-  /* ---------- REALTIME DATA ---------- */
+  const [editingCardId, setEditingCardId] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState('')
 
   const { data, loading, error } = useSubscription<{
     boards_by_pk: Board
@@ -156,8 +165,6 @@ export default function BoardPage() {
     skip: !isAuthenticated,
   })
 
-  /* ---------- MUTATIONS ---------- */
-
   const [createColumn] = useMutation(CREATE_COLUMN)
   const [createCard] = useMutation(CREATE_CARD)
   const [updateCardPosition] = useMutation(UPDATE_CARD_POSITION)
@@ -165,16 +172,14 @@ export default function BoardPage() {
   const [updateCardTitle] = useMutation(UPDATE_CARD_TITLE)
   const [deleteCard] = useMutation(DELETE_CARD)
 
-  /* ---------- DRAG HANDLER ---------- */
+  /* ---------- Drag ---------- */
 
   const onDragEnd = async (result: DropResult) => {
     const { destination, source, draggableId, type } = result
     if (!destination) return
 
-    // COLUMN DRAG
     if (type === 'COLUMN') {
       if (destination.index === source.index) return
-
       await updateColumnPosition({
         variables: {
           id: draggableId,
@@ -184,7 +189,6 @@ export default function BoardPage() {
       return
     }
 
-    // CARD DRAG
     if (
       destination.droppableId === source.droppableId &&
       destination.index === source.index
@@ -201,7 +205,7 @@ export default function BoardPage() {
     })
   }
 
-  /* ---------- GUARDS ---------- */
+  /* ---------- Guards ---------- */
 
   if (!isAuthenticated) return <p className="p-6">Please sign in</p>
   if (loading) return <p className="p-6">Loading…</p>
@@ -209,8 +213,6 @@ export default function BoardPage() {
   if (!data?.boards_by_pk) return <p className="p-6">Board not found</p>
 
   const board = data.boards_by_pk
-
-  /* ---------- UI ---------- */
 
   return (
     <main className="p-6 space-y-6">
@@ -221,7 +223,6 @@ export default function BoardPage() {
         onSubmit={async (e) => {
           e.preventDefault()
           if (!newColumnName.trim()) return
-
           await createColumn({
             variables: { boardId, name: newColumnName },
           })
@@ -229,20 +230,21 @@ export default function BoardPage() {
         }}
         className="flex gap-2"
       >
-        <input
-          className="rounded border px-2 py-1"
+        <Input
           placeholder="New column name"
           value={newColumnName}
           onChange={(e) => setNewColumnName(e.target.value)}
         />
-        <button className="rounded bg-black px-3 py-1 text-white">
-          Add Column
-        </button>
+        <Button>Add Column</Button>
       </form>
 
-      {/* Columns + Cards */}
+      {/* Columns */}
       <DragDropContext onDragEnd={onDragEnd}>
-        <Droppable droppableId="columns" direction="horizontal" type="COLUMN">
+        <Droppable
+          droppableId="columns"
+          direction="horizontal"
+          type="COLUMN"
+        >
           {(provided) => (
             <div
               ref={provided.innerRef}
@@ -256,116 +258,131 @@ export default function BoardPage() {
                   key={column.id}
                 >
                   {(provided) => (
-                    <div
+                    <Card
                       ref={provided.innerRef}
                       {...provided.draggableProps}
-                      className="w-64 shrink-0 rounded border bg-gray-50 p-3 space-y-3"
+                      className="w-64 shrink-0"
                     >
-                      <h2
+                      <CardHeader
                         {...provided.dragHandleProps}
-                        className="font-semibold cursor-grab"
+                        className="cursor-grab font-semibold"
                       >
                         {column.name}
-                      </h2>
+                      </CardHeader>
 
-                      {/* Cards */}
-                      <Droppable droppableId={column.id} type="CARD">
-                        {(provided) => (
-                          <div
-                            ref={provided.innerRef}
-                            {...provided.droppableProps}
-                            className="space-y-2"
-                          >
-                            {column.cards.map((card, index) => (
-                              <Draggable
-                                draggableId={card.id}
-                                index={index}
-                                key={card.id}
-                              >
-                                {(provided) => (
-                                  <div
-                                    ref={provided.innerRef}
-                                    {...provided.draggableProps}
-                                    {...provided.dragHandleProps}
-                                    className="rounded bg-white p-2 shadow-sm space-y-1"
-                                  >
-                                    {/* EDIT TASK */}
-                                    <input
-                                      className="w-full rounded border px-1 py-0.5 text-sm"
-                                      defaultValue={card.title}
-                                      onBlur={(e) => {
-                                        if (
-                                          e.target.value.trim() &&
-                                          e.target.value !== card.title
-                                        ) {
-                                          updateCardTitle({
-                                            variables: {
-                                              id: card.id,
-                                              title: e.target.value,
-                                            },
+                      <CardContent className="space-y-2">
+                        <Droppable droppableId={column.id} type="CARD">
+                          {(provided) => (
+                            <div
+                              ref={provided.innerRef}
+                              {...provided.droppableProps}
+                              className="space-y-2"
+                            >
+                              {column.cards.map((card, index) => (
+                                <Draggable
+                                  draggableId={card.id}
+                                  index={index}
+                                  key={card.id}
+                                >
+                                  {(provided) => (
+                                    <Card
+                                      ref={provided.innerRef}
+                                      {...provided.draggableProps}
+                                      {...provided.dragHandleProps}
+                                      className="p-2 space-y-1"
+                                    >
+                                      {editingCardId === card.id ? (
+                                        <Input
+                                          autoFocus
+                                          value={editValue}
+                                          onChange={(e) =>
+                                            setEditValue(e.target.value)
+                                          }
+                                          onBlur={async () => {
+                                            if (editValue.trim()) {
+                                              await updateCardTitle({
+                                                variables: {
+                                                  id: card.id,
+                                                  title: editValue,
+                                                },
+                                              })
+                                            }
+                                            setEditingCardId(null)
+                                          }}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                              e.currentTarget.blur()
+                                            }
+                                          }}
+                                        />
+                                      ) : (
+                                        <div
+                                          className="cursor-pointer"
+                                          onClick={() => {
+                                            setEditingCardId(card.id)
+                                            setEditValue(card.title)
+                                          }}
+                                        >
+                                          {card.title}
+                                        </div>
+                                      )}
+
+                                      <Button
+                                        variant="destructive"
+                                        size="sm"
+                                        onClick={() =>
+                                          deleteCard({
+                                            variables: { id: card.id },
                                           })
                                         }
-                                      }}
-                                    />
+                                      >
+                                        Delete
+                                      </Button>
+                                    </Card>
+                                  )}
+                                </Draggable>
+                              ))}
+                              {provided.placeholder}
+                            </div>
+                          )}
+                        </Droppable>
 
-                                    {/* DELETE TASK */}
-                                    <button
-                                      onClick={() =>
-                                        deleteCard({
-                                          variables: { id: card.id },
-                                        })
-                                      }
-                                      className="text-xs text-red-500"
-                                    >
-                                      Delete
-                                    </button>
-                                  </div>
-                                )}
-                              </Draggable>
-                            ))}
-                            {provided.placeholder}
-                          </div>
-                        )}
-                      </Droppable>
+                        {/* Add Card */}
+                        <form
+                          onSubmit={async (e) => {
+                            e.preventDefault()
+                            const title = newCardTitle[column.id]
+                            if (!title?.trim()) return
 
-                      {/* Add Card */}
-                      <form
-                        onSubmit={async (e) => {
-                          e.preventDefault()
-                          const title = newCardTitle[column.id]
-                          if (!title?.trim()) return
+                            await createCard({
+                              variables: {
+                                columnId: column.id,
+                                title,
+                                position: column.cards.length,
+                              },
+                            })
 
-                          await createCard({
-                            variables: {
-                              columnId: column.id,
-                              title,
-                              position: column.cards.length,
-                            },
-                          })
-
-                          setNewCardTitle((prev) => ({
-                            ...prev,
-                            [column.id]: '',
-                          }))
-                        }}
-                        className="flex gap-1"
-                      >
-                        <input
-                          className="flex-1 rounded border px-1 py-0.5 text-sm"
-                          placeholder="New card"
-                          value={newCardTitle[column.id] || ''}
-                          onChange={(e) =>
                             setNewCardTitle((prev) => ({
                               ...prev,
-                              [column.id]: e.target.value,
+                              [column.id]: '',
                             }))
-                          }
-                        />
-                        <button className="rounded bg-black px-2 text-white text-sm">
-                          +
-                        </button>
-                      </form>
-                    </div>
+                          }}
+                          className="flex gap-1"
+                        >
+                          <Input
+                            placeholder="New task"
+                            value={newCardTitle[column.id] || ''}
+                            onChange={(e) =>
+                              setNewCardTitle((prev) => ({
+                                ...prev,
+                                [column.id]: e.target.value,
+                              }))
+                            }
+                          />
+                          <Button size="sm">+</Button>
+                        </form>
+                      </CardContent>
+                    </Card>
                   )}
                 </Draggable>
               ))}
