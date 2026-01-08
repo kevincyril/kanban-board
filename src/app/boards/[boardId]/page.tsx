@@ -117,6 +117,25 @@ const UPDATE_COLUMN_POSITION = gql`
   }
 `
 
+const UPDATE_CARD_TITLE = gql`
+  mutation UpdateCardTitle($id: uuid!, $title: String!) {
+    update_cards_by_pk(
+      pk_columns: { id: $id }
+      _set: { title: $title }
+    ) {
+      id
+    }
+  }
+`
+
+const DELETE_CARD = gql`
+  mutation DeleteCard($id: uuid!) {
+    delete_cards_by_pk(id: $id) {
+      id
+    }
+  }
+`
+
 /* =========================
    Page
 ========================= */
@@ -143,6 +162,8 @@ export default function BoardPage() {
   const [createCard] = useMutation(CREATE_CARD)
   const [updateCardPosition] = useMutation(UPDATE_CARD_POSITION)
   const [updateColumnPosition] = useMutation(UPDATE_COLUMN_POSITION)
+  const [updateCardTitle] = useMutation(UPDATE_CARD_TITLE)
+  const [deleteCard] = useMutation(DELETE_CARD)
 
   /* ---------- DRAG HANDLER ---------- */
 
@@ -204,7 +225,6 @@ export default function BoardPage() {
           await createColumn({
             variables: { boardId, name: newColumnName },
           })
-
           setNewColumnName('')
         }}
         className="flex gap-2"
@@ -222,11 +242,7 @@ export default function BoardPage() {
 
       {/* Columns + Cards */}
       <DragDropContext onDragEnd={onDragEnd}>
-        <Droppable
-          droppableId="columns"
-          direction="horizontal"
-          type="COLUMN"
-        >
+        <Droppable droppableId="columns" direction="horizontal" type="COLUMN">
           {(provided) => (
             <div
               ref={provided.innerRef}
@@ -271,9 +287,38 @@ export default function BoardPage() {
                                     ref={provided.innerRef}
                                     {...provided.draggableProps}
                                     {...provided.dragHandleProps}
-                                    className="rounded bg-white p-2 shadow-sm"
+                                    className="rounded bg-white p-2 shadow-sm space-y-1"
                                   >
-                                    {card.title}
+                                    {/* EDIT TASK */}
+                                    <input
+                                      className="w-full rounded border px-1 py-0.5 text-sm"
+                                      defaultValue={card.title}
+                                      onBlur={(e) => {
+                                        if (
+                                          e.target.value.trim() &&
+                                          e.target.value !== card.title
+                                        ) {
+                                          updateCardTitle({
+                                            variables: {
+                                              id: card.id,
+                                              title: e.target.value,
+                                            },
+                                          })
+                                        }
+                                      }}
+                                    />
+
+                                    {/* DELETE TASK */}
+                                    <button
+                                      onClick={() =>
+                                        deleteCard({
+                                          variables: { id: card.id },
+                                        })
+                                      }
+                                      className="text-xs text-red-500"
+                                    >
+                                      Delete
+                                    </button>
                                   </div>
                                 )}
                               </Draggable>
