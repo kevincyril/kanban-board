@@ -1,6 +1,10 @@
 'use client'
 
-import { gql, useMutation, useSubscription } from '@apollo/client'
+import {
+  gql,
+  useMutation,
+  useSubscription,
+} from '@apollo/client'
 import { useParams } from 'next/navigation'
 import { useState } from 'react'
 import { useAuthenticationStatus } from '@nhost/react'
@@ -36,7 +40,7 @@ type Board = {
 }
 
 /* =========================
-   GraphQL (SUBSCRIPTION)
+   GraphQL (REALTIME)
 ========================= */
 
 const BOARD_SUBSCRIPTION = gql`
@@ -102,20 +106,12 @@ const UPDATE_CARD_POSITION = gql`
   }
 `
 
-const UPDATE_CARD_TITLE = gql`
-  mutation UpdateCardTitle($id: uuid!, $title: String!) {
-    update_cards_by_pk(
+const UPDATE_COLUMN_POSITION = gql`
+  mutation UpdateColumnPosition($id: uuid!, $position: numeric!) {
+    update_columns_by_pk(
       pk_columns: { id: $id }
-      _set: { title: $title }
+      _set: { position: $position }
     ) {
-      id
-    }
-  }
-`
-
-const DELETE_CARD = gql`
-  mutation DeleteCard($id: uuid!) {
-    delete_cards_by_pk(id: $id) {
       id
     }
   }
@@ -127,30 +123,47 @@ const DELETE_CARD = gql`
 
 export default function BoardPage() {
   const { isAuthenticated } = useAuthenticationStatus()
-  const params = useParams()
-  const boardId = params.boardId as string
+  const { boardId } = useParams<{ boardId: string }>()
 
   const [newColumnName, setNewColumnName] = useState('')
   const [newCardTitle, setNewCardTitle] = useState<Record<string, string>>({})
 
-  const { data, loading, error } = useSubscription<{ boards_by_pk: Board }>(
-    BOARD_SUBSCRIPTION,
-    {
-      variables: { id: boardId },
-      skip: !isAuthenticated,
-    }
-  )
+  /* ---------- REALTIME DATA ---------- */
+
+  const { data, loading, error } = useSubscription<{
+    boards_by_pk: Board
+  }>(BOARD_SUBSCRIPTION, {
+    variables: { id: boardId },
+    skip: !isAuthenticated,
+  })
+
+  /* ---------- MUTATIONS ---------- */
 
   const [createColumn] = useMutation(CREATE_COLUMN)
   const [createCard] = useMutation(CREATE_CARD)
   const [updateCardPosition] = useMutation(UPDATE_CARD_POSITION)
-  const [updateCardTitle] = useMutation(UPDATE_CARD_TITLE)
-  const [deleteCard] = useMutation(DELETE_CARD)
+  const [updateColumnPosition] = useMutation(UPDATE_COLUMN_POSITION)
+
+  /* ---------- DRAG HANDLER ---------- */
 
   const onDragEnd = async (result: DropResult) => {
-    const { destination, source, draggableId } = result
+    const { destination, source, draggableId, type } = result
     if (!destination) return
 
+    // COLUMN DRAG
+    if (type === 'COLUMN') {
+      if (destination.index === source.index) return
+
+      await updateColumnPosition({
+        variables: {
+          id: draggableId,
+          position: destination.index,
+        },
+      })
+      return
+    }
+
+    // CARD DRAG
     if (
       destination.droppableId === source.droppableId &&
       destination.index === source.index
@@ -167,12 +180,16 @@ export default function BoardPage() {
     })
   }
 
+  /* ---------- GUARDS ---------- */
+
   if (!isAuthenticated) return <p className="p-6">Please sign in</p>
   if (loading) return <p className="p-6">Loading…</p>
   if (error) return <p className="p-6">Error: {error.message}</p>
   if (!data?.boards_by_pk) return <p className="p-6">Board not found</p>
 
   const board = data.boards_by_pk
+
+  /* ---------- UI ---------- */
 
   return (
     <main className="p-6 space-y-6">
@@ -183,7 +200,11 @@ export default function BoardPage() {
         onSubmit={async (e) => {
           e.preventDefault()
           if (!newColumnName.trim()) return
-          await createColumn({ variables: { boardId, name: newColumnName } })
+
+          await createColumn({
+            variables: { boardId, name: newColumnName },
+          })
+
           setNewColumnName('')
         }}
         className="flex gap-2"
@@ -199,102 +220,114 @@ export default function BoardPage() {
         </button>
       </form>
 
+      {/* Columns + Cards */}
       <DragDropContext onDragEnd={onDragEnd}>
-        <div className="flex gap-4 overflow-x-auto">
-          {board.columns.map((column) => (
-            <Droppable droppableId={column.id} key={column.id}>
-              {(provided) => (
-                <div
-                  ref={provided.innerRef}
-                  {...provided.droppableProps}
-                  className="w-64 shrink-0 rounded border bg-gray-50 p-3 space-y-3"
+        <Droppable
+          droppableId="columns"
+          direction="horizontal"
+          type="COLUMN"
+        >
+          {(provided) => (
+            <div
+              ref={provided.innerRef}
+              {...provided.droppableProps}
+              className="flex gap-4 overflow-x-auto"
+            >
+              {board.columns.map((column, colIndex) => (
+                <Draggable
+                  draggableId={column.id}
+                  index={colIndex}
+                  key={column.id}
                 >
-                  <h2 className="font-semibold">{column.name}</h2>
-
-                  <div className="space-y-2">
-                    {column.cards.map((card, index) => (
-                      <Draggable
-                        draggableId={card.id}
-                        index={index}
-                        key={card.id}
+                  {(provided) => (
+                    <div
+                      ref={provided.innerRef}
+                      {...provided.draggableProps}
+                      className="w-64 shrink-0 rounded border bg-gray-50 p-3 space-y-3"
+                    >
+                      <h2
+                        {...provided.dragHandleProps}
+                        className="font-semibold cursor-grab"
                       >
+                        {column.name}
+                      </h2>
+
+                      {/* Cards */}
+                      <Droppable droppableId={column.id} type="CARD">
                         {(provided) => (
                           <div
                             ref={provided.innerRef}
-                            {...provided.draggableProps}
-                            {...provided.dragHandleProps}
-                            className="rounded bg-white p-2 shadow-sm space-y-1"
+                            {...provided.droppableProps}
+                            className="space-y-2"
                           >
-                            <input
-                              className="w-full rounded border px-1 py-0.5 text-sm"
-                              defaultValue={card.title}
-                              onBlur={(e) => {
-                                if (e.target.value !== card.title) {
-                                  updateCardTitle({
-                                    variables: {
-                                      id: card.id,
-                                      title: e.target.value,
-                                    },
-                                  })
-                                }
-                              }}
-                            />
-                            <button
-                              className="text-xs text-red-500"
-                              onClick={() =>
-                                deleteCard({ variables: { id: card.id } })
-                              }
-                            >
-                              Delete
-                            </button>
+                            {column.cards.map((card, index) => (
+                              <Draggable
+                                draggableId={card.id}
+                                index={index}
+                                key={card.id}
+                              >
+                                {(provided) => (
+                                  <div
+                                    ref={provided.innerRef}
+                                    {...provided.draggableProps}
+                                    {...provided.dragHandleProps}
+                                    className="rounded bg-white p-2 shadow-sm"
+                                  >
+                                    {card.title}
+                                  </div>
+                                )}
+                              </Draggable>
+                            ))}
+                            {provided.placeholder}
                           </div>
                         )}
-                      </Draggable>
-                    ))}
-                    {provided.placeholder}
-                  </div>
+                      </Droppable>
 
-                  <form
-                    onSubmit={async (e) => {
-                      e.preventDefault()
-                      const title = newCardTitle[column.id]
-                      if (!title?.trim()) return
+                      {/* Add Card */}
+                      <form
+                        onSubmit={async (e) => {
+                          e.preventDefault()
+                          const title = newCardTitle[column.id]
+                          if (!title?.trim()) return
 
-                      await createCard({
-                        variables: {
-                          columnId: column.id,
-                          title,
-                          position: column.cards.length,
-                        },
-                      })
+                          await createCard({
+                            variables: {
+                              columnId: column.id,
+                              title,
+                              position: column.cards.length,
+                            },
+                          })
 
-                      setNewCardTitle((prev) => ({
-                        ...prev,
-                        [column.id]: '',
-                      }))
-                    }}
-                    className="flex gap-1"
-                  >
-                    <input
-                      className="flex-1 rounded border px-1 py-0.5 text-sm"
-                      placeholder="New card"
-                      value={newCardTitle[column.id] || ''}
-                      onChange={(e) =>
-                        setNewCardTitle((prev) => ({
-                          ...prev,
-                          [column.id]: e.target.value,
-                        }))
-                      }
-                    />
-                    <button className="rounded bg-black px-2 text-white text-sm">
-                      +
-                    </button>
-                  </form>
-                </div>
-              )}
-            </Droppable>
-          ))}
-        </div>
+                          setNewCardTitle((prev) => ({
+                            ...prev,
+                            [column.id]: '',
+                          }))
+                        }}
+                        className="flex gap-1"
+                      >
+                        <input
+                          className="flex-1 rounded border px-1 py-0.5 text-sm"
+                          placeholder="New card"
+                          value={newCardTitle[column.id] || ''}
+                          onChange={(e) =>
+                            setNewCardTitle((prev) => ({
+                              ...prev,
+                              [column.id]: e.target.value,
+                            }))
+                          }
+                        />
+                        <button className="rounded bg-black px-2 text-white text-sm">
+                          +
+                        </button>
+                      </form>
+                    </div>
+                  )}
+                </Draggable>
+              ))}
+              {provided.placeholder}
+            </div>
+          )}
+        </Droppable>
       </DragDropContext>
     </main>
   )
